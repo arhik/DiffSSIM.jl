@@ -16,16 +16,16 @@ using TestImages
 
 using ImageQualityIndexes
 
-img = testimage("cameraman") .|> float32
+img = testimage("coffee") .|> float32
 
-x = reshape(channelview(img) .|> Float32, size(img)..., 1, 1) |> gpu
-y = rand(Float32, size(img)..., 1, 1) |> gpu
+x = reshape(permutedims(channelview(img) .|> Float32, (2, 3, 1)), size(img)..., 3, 1) |> gpu
+y = rand(Float32, size(img)..., 3, 1) |> gpu
 
 windowSize = 11
 nChannels = size(x, 3)
 kernel = repeat(
     reshape(kernelWindow(windowSize, 1.5) .|> Float32, (windowSize, windowSize, 1, 1)),
-        inner=(1, 1, nChannels, 1)
+        inner=(1, 1, 1, nChannels)
     ) |> gpu
 cdims = DenseConvDims(
     size(x), 
@@ -34,7 +34,7 @@ cdims = DenseConvDims(
     padding=div(windowSize, 2), 
     dilation=(1, 1), 
     flipkernel=false, 
-    groups=1           
+    groups=nChannels           
 )
 
 C1 = 0.01f0^2
@@ -73,6 +73,11 @@ while score < 0.99999
     @info score
     grads = gradient(ssimLoss, x, y)
     y .-= 100.0f0*grads[2] #lr is strange ... need to check grads
-    yimg = Gray{N0f8}.(reshape(clamp.(y |> cpu, 0.0, 1.0), size(img)))
+    yimg = colorview(RGB{N0f8},
+        permutedims(
+            reshape(clamp.(y |> cpu, 0.0, 1.0), size(img)..., nChannels),
+            (3, 1, 2),
+        ) .|> n0f8
+    )
     imshow!(canvas, yimg)
 end
